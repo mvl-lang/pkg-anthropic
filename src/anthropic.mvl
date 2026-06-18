@@ -25,11 +25,11 @@ use pkg.tls.https.{HttpsResponse, HttpsError, https_error_msg, https_post}
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
-fn default_api_url() -> ApiEndpoint[String] {
+total fn default_api_url() -> ApiEndpoint[String] {
     default_endpoint("https://api.anthropic.com")
 }
 
-fn api_version() -> String {
+total fn api_version() -> String {
     "2023-06-01"
 }
 
@@ -92,7 +92,7 @@ pub type AnthropicError = enum {
 }
 
 /// Format an AnthropicError as a human-readable string.
-pub fn anthropic_error_msg(e: val AnthropicError) -> String {
+pub total fn anthropic_error_msg(e: val AnthropicError) -> String {
     match e {
         AnthropicError::HttpError(he)        => "https: ".concat(https_error_msg(he)),
         AnthropicError::JsonParseError(msg)  => "json: ".concat(msg),
@@ -106,19 +106,19 @@ pub fn anthropic_error_msg(e: val AnthropicError) -> String {
 /// Create a new Claude client with the given API key.
 ///
 /// Uses the default Anthropic API endpoint.
-pub fn Claude::new(api_key: Secret[String]) -> Claude {
+pub total fn Claude::new(api_key: Secret[String]) -> Claude {
     Claude { api_key: api_key, base_url: default_api_url() }
 }
 
 /// Create a Claude client with a custom base URL.
-pub fn Claude::with_endpoint(api_key: Secret[String], base_url: ApiEndpoint[String]) -> Claude {
+pub total fn Claude::with_endpoint(api_key: Secret[String], base_url: ApiEndpoint[String]) -> Claude {
     Claude { api_key: api_key, base_url: base_url }
 }
 
 // ── Model ID mapping ────────────────────────────────────────────────────────
 
 /// Convert a ModelId to the API string identifier.
-pub fn model_id_string(m: val ModelId) -> String {
+pub total fn model_id_string(m: val ModelId) -> String {
     match m {
         ModelId::Opus4_6   => "claude-opus-4-6",
         ModelId::Sonnet4_6 => "claude-sonnet-4-6",
@@ -127,7 +127,7 @@ pub fn model_id_string(m: val ModelId) -> String {
 }
 
 /// Convert a Role to the API string.
-fn role_string(r: val Role) -> String {
+total fn role_string(r: val Role) -> String {
     match r {
         Role::User      => "user",
         Role::Assistant => "assistant",
@@ -138,7 +138,7 @@ fn role_string(r: val Role) -> String {
 // ── JSON serialization ──────────────────────────────────────────────────────
 
 /// Encode a single Message as a JSON Value.
-fn encode_message(msg: Message) -> Value {
+total fn encode_message(msg: Message) -> Value {
     Value::Object({
         "role":    Value::String(role_string(msg.role)),
         "content": Value::String(msg.content),
@@ -146,10 +146,10 @@ fn encode_message(msg: Message) -> Value {
 }
 
 /// Encode a list of Messages as a JSON Array.
-partial fn encode_messages(msgs: List[Message]) -> Value {
+total fn encode_messages(msgs: List[Message]) -> Value {
     let arr: ref List[Value] = [];
     let i: ref Int = 0;
-    while i < msgs.len() {
+    while i < msgs.len() decreases msgs.len() - i {
         match msgs.get(i) {
             Some(m) => { arr = arr.concat([encode_message(m)]) },
             None    => {},
@@ -160,7 +160,7 @@ partial fn encode_messages(msgs: List[Message]) -> Value {
 }
 
 /// Build the Messages API request body.
-partial fn build_request_body(
+total fn build_request_body(
     model: ModelId,
     messages: List[Message],
     max_tokens: Int,
@@ -168,7 +168,7 @@ partial fn build_request_body(
     let system_msgs: ref List[Message] = [];
     let non_system: ref List[Message] = [];
     let i: ref Int = 0;
-    while i < messages.len() {
+    while i < messages.len() decreases messages.len() - i {
         match messages.get(i) {
             Some(m) => match m.role {
                 Role::System => { system_msgs = system_msgs.concat([m]) },
@@ -195,7 +195,7 @@ partial fn build_request_body(
 
 // ── JSON deserialization ────────────────────────────────────────────────────
 
-fn get_string_field(obj: Map[String, Value], key: String) -> Result[String, AnthropicError] {
+total fn get_string_field(obj: Map[String, Value], key: String) -> Result[String, AnthropicError] {
     match obj.get(key) {
         Some(Value::String(s)) => Ok(s),
         Some(_)                => Err(AnthropicError::MissingField(key.concat(" (not a string)"))),
@@ -203,7 +203,7 @@ fn get_string_field(obj: Map[String, Value], key: String) -> Result[String, Anth
     }
 }
 
-fn get_int_field(obj: Map[String, Value], key: String) -> Result[Int, AnthropicError] {
+total fn get_int_field(obj: Map[String, Value], key: String) -> Result[Int, AnthropicError] {
     match obj.get(key) {
         Some(Value::Number(n)) => Ok(n.to_int()),
         Some(_)                => Err(AnthropicError::MissingField(key.concat(" (not a number)"))),
@@ -215,12 +215,12 @@ fn get_int_field(obj: Map[String, Value], key: String) -> Result[Int, AnthropicE
 ///
 /// The API returns `[{"type": "text", "text": "..."}]`.
 /// We concatenate all text blocks.
-partial fn extract_content_text(content_val: Value) -> Result[String, AnthropicError] {
+total fn extract_content_text(content_val: Value) -> Result[String, AnthropicError] {
     match content_val {
         Value::Array(items) => {
             let text: ref String = "";
             let i: ref Int = 0;
-            while i < items.len() {
+            while i < items.len() decreases items.len() - i {
                 match items.get(i) {
                     Some(Value::Object(block)) => match block.get("text") {
                         Some(Value::String(t)) => { text = text.concat(t) },
@@ -240,7 +240,7 @@ partial fn extract_content_text(content_val: Value) -> Result[String, AnthropicE
 /// Parse a JSON Value into a typed Response.
 ///
 /// All remote-sourced strings are wrapped in Tainted.
-partial fn parse_response(v: Value) -> Result[Response, AnthropicError] {
+total fn parse_response(v: Value) -> Result[Response, AnthropicError] {
     match v {
         Value::Object(obj) => {
             let id: String = get_string_field(obj, "id")?;
