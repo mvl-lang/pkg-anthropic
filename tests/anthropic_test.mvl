@@ -5,7 +5,9 @@
 //
 // Assurance note: 0 extern blocks.
 
-// ── Type re-declarations (workaround: #96) ────────────────────────────────
+// ── Type re-declarations ──────────────────────────────────────────────────
+// Tests live in tests/, source in src/ — the test runner only scans siblings
+// of the test file, so src/anthropic.mvl types are not auto-loaded here.
 
 type ModelId = enum {
     Opus4_6,
@@ -307,7 +309,7 @@ test fn test_request_body_model() -> Unit {
     let msgs: List[Message] = [
         Message { role: Role::User, content: "What is MVL?" },
     ];
-    let body: Value = build_request_body(ModelId::Sonnet4_6_6, msgs, 1024);
+    let body: Value = build_request_body(ModelId::Sonnet4_6, msgs, 1024);
     match body {
         Value::Object(obj) => match obj.get("model") {
             Some(Value::String(m)) => assert_eq(m, "claude-sonnet-4-6"),
@@ -321,7 +323,7 @@ test fn test_request_body_max_tokens() -> Unit {
     let msgs: List[Message] = [
         Message { role: Role::User, content: "Hi" },
     ];
-    let body: Value = build_request_body(ModelId::Haiku4_5_5, msgs, 512);
+    let body: Value = build_request_body(ModelId::Haiku4_5, msgs, 512);
     match body {
         Value::Object(obj) => match obj.get("max_tokens") {
             Some(Value::Number(n)) => assert_eq(n, 512.0),
@@ -336,7 +338,7 @@ test fn test_request_body_system_extracted() -> Unit {
         Message { role: Role::System, content: "You are helpful." },
         Message { role: Role::User, content: "Hi" },
     ];
-    let body: Value = build_request_body(ModelId::Haiku4_5_5, msgs, 512);
+    let body: Value = build_request_body(ModelId::Haiku4_5, msgs, 512);
     match body {
         Value::Object(obj) => {
             match obj.get("system") {
@@ -537,7 +539,7 @@ test fn test_extract_content_empty_array() -> Unit {
 
 test fn test_request_body_no_messages() -> Unit {
     let msgs: List[Message] = [];
-    let body: Value = build_request_body(ModelId::Sonnet4_6_6, msgs, 256);
+    let body: Value = build_request_body(ModelId::Sonnet4_6, msgs, 256);
     match body {
         Value::Object(obj) => {
             match obj.get("messages") {
