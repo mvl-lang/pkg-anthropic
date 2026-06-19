@@ -17,31 +17,27 @@
 //   - Request content:   bare String       — your data, you trust it
 //
 // See #1020.
-
 use std.ifc.{Tainted, Secret, taint, trust, release, classify}
+
 use std.json.{Value, JsonError, encode, decode}
+
 use std.net.{ApiEndpoint, api_endpoint, unapi_endpoint, default_endpoint}
+
 use pkg.tls.https.{HttpsResponse, HttpsError, https_error_msg, https_post}
 
 // ── Constants ───────────────────────────────────────────────────────────────
+total fn default_api_url() -> ApiEndpoint[String] { default_endpoint("https://api.anthropic.com") }
 
-total fn default_api_url() -> ApiEndpoint[String] {
-    default_endpoint("https://api.anthropic.com")
-}
-
-total fn api_version() -> String {
-    "2023-06-01"
-}
+total fn api_version() -> String { "2023-06-01" }
 
 // ── Types ───────────────────────────────────────────────────────────────────
-
 /// Anthropic API client.
 ///
 /// Holds the API key as `Secret[String]` — the compiler prevents accidental
 /// logging or exposure.  The base URL is `ApiEndpoint[String]` — a capability
 /// token with provenance tracking.
 pub type Claude = struct {
-    api_key:  Secret[String],
+    api_key: Secret[String],
     base_url: ApiEndpoint[String],
 }
 
@@ -54,7 +50,7 @@ pub type ModelId = enum {
 
 /// A single message in a conversation.
 pub type Message = struct {
-    role:    Role,
+    role: Role,
     content: String,
 }
 
@@ -70,16 +66,16 @@ pub type Role = enum {
 /// All string fields from the remote API are `Tainted[String]` — untrusted
 /// until the caller explicitly `relabel trust(field, "AUDIT-TAG")`.
 pub type Response = struct {
-    id:          Tainted[String],
-    content:     Tainted[String],
-    model:       Tainted[String],
-    usage:       Usage,
+    id: Tainted[String],
+    content: Tainted[String],
+    model: Tainted[String],
+    usage: Usage,
     stop_reason: Tainted[String],
 }
 
 /// Token usage counters.
 pub type Usage = struct {
-    input_tokens:  Int,
+    input_tokens: Int,
     output_tokens: Int,
 }
 
@@ -94,15 +90,14 @@ pub type AnthropicError = enum {
 /// Format an AnthropicError as a human-readable string.
 pub total fn anthropic_error_msg(e: val AnthropicError) -> String {
     match e {
-        AnthropicError::HttpError(he)        => "https: ".concat(https_error_msg(he)),
-        AnthropicError::JsonParseError(msg)  => "json: ".concat(msg),
-        AnthropicError::ApiError(code, msg)  => "api error ".concat(code.to_string()).concat(": ").concat(msg),
-        AnthropicError::MissingField(f)      => "missing field: ".concat(f),
+        AnthropicError::HttpError(he) => "https: ".concat(https_error_msg(he)),
+        AnthropicError::JsonParseError(msg) => "json: ".concat(msg),
+        AnthropicError::ApiError(code, msg) => "api error ".concat(code.to_string()).concat(": ").concat(msg),
+        AnthropicError::MissingField(f) => "missing field: ".concat(f),
     }
 }
 
 // ── Constructors ────────────────────────────────────────────────────────────
-
 /// Create a new Claude client with the given API key.
 ///
 /// Uses the default Anthropic API endpoint.
@@ -111,50 +106,51 @@ pub total fn Claude::new(api_key: Secret[String]) -> Claude {
 }
 
 /// Create a Claude client with a custom base URL.
-pub total fn Claude::with_endpoint(api_key: Secret[String], base_url: ApiEndpoint[String]) -> Claude {
+pub total fn Claude::with_endpoint(
+    api_key: Secret[String],
+    base_url: ApiEndpoint[String],
+) -> Claude {
     Claude { api_key: api_key, base_url: base_url }
 }
 
 // ── Model ID mapping ────────────────────────────────────────────────────────
-
 /// Convert a ModelId to the API string identifier.
 pub total fn model_id_string(m: val ModelId) -> String {
     match m {
-        ModelId::Opus4_6   => "claude-opus-4-6",
+        ModelId::Opus4_6 => "claude-opus-4-6",
         ModelId::Sonnet4_6 => "claude-sonnet-4-6",
-        ModelId::Haiku4_5  => "claude-haiku-4-5-20251001",
+        ModelId::Haiku4_5 => "claude-haiku-4-5-20251001",
     }
 }
 
 /// Convert a Role to the API string.
 total fn role_string(r: val Role) -> String {
     match r {
-        Role::User      => "user",
+        Role::User => "user",
         Role::Assistant => "assistant",
-        Role::System    => "system",
+        Role::System => "system",
     }
 }
 
 // ── JSON serialization ──────────────────────────────────────────────────────
-
 /// Encode a single Message as a JSON Value.
 total fn encode_message(msg: Message) -> Value {
-    Value::Object({
-        "role":    Value::String(role_string(msg.role)),
-        "content": Value::String(msg.content),
-    })
+    Value::Object({"role": Value::String(role_string(msg.role)), "content": Value::String(msg.content)})
 }
 
 /// Encode a list of Messages as a JSON Array.
 total fn encode_messages(msgs: List[Message]) -> Value {
     let arr: ref List[Value] = [];
     let i: ref Int = 0;
-    while i < msgs.len() decreases msgs.len() - i {
+    while i < msgs.len()
+        decreases msgs.len() - i {
         match msgs.get(i) {
-            Some(m) => { arr = arr.concat([encode_message(m)]) },
-            None    => {},
+            Some(m) => {
+                arr = arr.concat([encode_message(m)]);
+            },
+            None => { },
         }
-        i = i + 1
+        i = i + 1;
     }
     Value::Array(arr)
 }
@@ -168,46 +164,52 @@ total fn build_request_body(
     let system_msgs: ref List[Message] = [];
     let non_system: ref List[Message] = [];
     let i: ref Int = 0;
-    while i < messages.len() decreases messages.len() - i {
+    while i < messages.len()
+        decreases messages.len() - i {
         match messages.get(i) {
             Some(m) => match m.role {
-                Role::System => { system_msgs = system_msgs.concat([m]) },
-                _            => { non_system = non_system.concat([m]) },
+                Role::System => {
+                    system_msgs = system_msgs.concat([m]);
+                },
+                _ => {
+                    non_system = non_system.concat([m]);
+                },
             },
-            None => {},
+            None => { },
         }
-        i = i + 1
+        i = i + 1;
     }
-    let body: ref Map[String, Value] = {
-        "model":      Value::String(model_id_string(model)),
-        "max_tokens": Value::Number(max_tokens.to_float()),
-        "messages":   encode_messages(non_system),
-    };
-    // Add system parameter if system messages are present
+    let body: ref Map[String, Value] = {"model": Value::String(model_id_string(model)), "max_tokens": Value::Number(max_tokens.to_float()), "messages": encode_messages(non_system)};
     if system_msgs.len() > 0 {
         match system_msgs.get(0) {
             Some(sm) => body.insert("system", Value::String(sm.content)),
-            None     => {},
+            None => { },
         }
-    } else {}
+    } else { }
     Value::Object(body)
 }
 
+// Add system parameter if system messages are present
 // ── JSON deserialization ────────────────────────────────────────────────────
-
-total fn get_string_field(obj: Map[String, Value], key: String) -> Result[String, AnthropicError] {
+total fn get_string_field(
+    obj: Map[String, Value],
+    key: String,
+) -> Result[String, AnthropicError] {
     match obj.get(key) {
         Some(Value::String(s)) => Ok(s),
-        Some(_)                => Err(AnthropicError::MissingField(key.concat(" (not a string)"))),
-        None                   => Err(AnthropicError::MissingField(key)),
+        Some(_) => Err(AnthropicError::MissingField(key.concat(" (not a string)"))),
+        None => Err(AnthropicError::MissingField(key)),
     }
 }
 
-total fn get_int_field(obj: Map[String, Value], key: String) -> Result[Int, AnthropicError] {
+total fn get_int_field(
+    obj: Map[String, Value],
+    key: String,
+) -> Result[Int, AnthropicError] {
     match obj.get(key) {
         Some(Value::Number(n)) => Ok(n.to_int()),
-        Some(_)                => Err(AnthropicError::MissingField(key.concat(" (not a number)"))),
-        None                   => Err(AnthropicError::MissingField(key)),
+        Some(_) => Err(AnthropicError::MissingField(key.concat(" (not a number)"))),
+        None => Err(AnthropicError::MissingField(key)),
     }
 }
 
@@ -220,15 +222,18 @@ total fn extract_content_text(content_val: Value) -> Result[String, AnthropicErr
         Value::Array(items) => {
             let text: ref String = "";
             let i: ref Int = 0;
-            while i < items.len() decreases items.len() - i {
+            while i < items.len()
+                decreases items.len() - i {
                 match items.get(i) {
                     Some(Value::Object(block)) => match block.get("text") {
-                        Some(Value::String(t)) => { text = text.concat(t) },
-                        _                      => {},
+                        Some(Value::String(t)) => {
+                            text = text.concat(t);
+                        },
+                        _ => { },
                     },
-                    _ => {},
+                    _ => { },
                 }
-                i = i + 1
+                i = i + 1;
             }
             Ok(text)
         },
@@ -248,29 +253,26 @@ total fn parse_response(v: Value) -> Result[Response, AnthropicError] {
             let stop: String = get_string_field(obj, "stop_reason")?;
             let content_val: Value = match obj.get("content") {
                 Some(cv) => cv,
-                None     => { return Err(AnthropicError::MissingField("content")) },
+                None => {
+                    return Err(AnthropicError::MissingField("content"));
+                },
             };
             let content_text: String = extract_content_text(content_val)?;
             let usage_obj: Map[String, Value] = match obj.get("usage") {
                 Some(Value::Object(u)) => u,
-                _                      => { return Err(AnthropicError::MissingField("usage")) },
+                _ => {
+                    return Err(AnthropicError::MissingField("usage"));
+                },
             };
             let input_tokens: Int = get_int_field(usage_obj, "input_tokens")?;
             let output_tokens: Int = get_int_field(usage_obj, "output_tokens")?;
-            Ok(Response {
-                id:          relabel taint(id, "ANTHROPIC-RESPONSE"),
-                content:     relabel taint(content_text, "ANTHROPIC-RESPONSE"),
-                model:       relabel taint(model, "ANTHROPIC-RESPONSE"),
-                usage:       Usage { input_tokens: input_tokens, output_tokens: output_tokens },
-                stop_reason: relabel taint(stop, "ANTHROPIC-RESPONSE"),
-            })
+            Ok(Response { id: relabel taint(id, "ANTHROPIC-RESPONSE"), content: relabel taint(content_text, "ANTHROPIC-RESPONSE"), model: relabel taint(model, "ANTHROPIC-RESPONSE"), usage: Usage { input_tokens: input_tokens, output_tokens: output_tokens }, stop_reason: relabel taint(stop, "ANTHROPIC-RESPONSE") })
         },
         _ => Err(AnthropicError::JsonParseError("expected JSON object")),
     }
 }
 
 // ── Messages API ────────────────────────────────────────────────────────────
-
 /// Send a Messages API request.
 ///
 /// The API key is declassified at the HTTP boundary with audit tag
@@ -279,52 +281,50 @@ total fn parse_response(v: Value) -> Result[Response, AnthropicError] {
 ///
 /// Effects: `! Net` — makes an HTTPS call to the Anthropic API.
 pub partial fn Claude::messages(
-    self,
+    self: Claude,
     model: ModelId,
     messages: List[Message],
     max_tokens: Int,
 ) -> Result[Response, AnthropicError] ! Net {
-    // Validate: the Anthropic API accepts at most one system message.
     let sys_count: ref Int = 0;
-    let j: ref Int = 0;
-    while j < messages.len() {
+    for j in range(0, messages.len()) {
         match messages.get(j) {
             Some(m) => match m.role {
-                Role::System => { sys_count = sys_count + 1 },
-                _            => {},
+                Role::System => {
+                    sys_count = sys_count + 1;
+                },
+                _ => { },
             },
-            None => {},
+            None => { },
         }
-        j = j + 1
     }
     if sys_count > 1 {
-        return Err(AnthropicError::ApiError(400, "only one system message is supported"))
+        return Err(AnthropicError::ApiError(400, "only one system message is supported"));
     }
-    let url: String = relabel unapi_endpoint(self.base_url, "ANTHROPIC-ENDPOINT")
-        .concat("/v1/messages");
+    let url: String = relabel unapi_endpoint(self.base_url, "ANTHROPIC-ENDPOINT").concat("/v1/messages");
     let key: String = relabel release(self.api_key, "ANTHROPIC-AUTH");
-    let hdrs: Map[String, String] = {
-        "Content-Type":      "application/json",
-        "Accept":            "application/json",
-        "x-api-key":         key,
-        "anthropic-version": api_version(),
-    };
+    let hdrs: Map[String, String] = {"Content-Type": "application/json", "Accept": "application/json", "x-api-key": key, "anthropic-version": api_version()};
     let body: Value = build_request_body(model, messages, max_tokens);
     let body_str: String = encode(body);
     let resp: HttpsResponse = match https_post(url, hdrs, body_str) {
-        Ok(r)  => r,
-        Err(e) => { return Err(AnthropicError::HttpError(e)) },
+        Ok(r) => r,
+        Err(e) => {
+            return Err(AnthropicError::HttpError(e));
+        },
     };
     let code: Int = resp.status_code;
     if code >= 200 && code < 300 {
         let json_body: String = relabel trust(resp.body, "ANTHROPIC-RESPONSE-PARSE");
         match decode(json_body) {
-            Ok(v)                         => parse_response(v),
+            Ok(v) => parse_response(v),
             Err(JsonError::ParseError(e)) => Err(AnthropicError::JsonParseError(e)),
         }
     } else {
         let err_body: String = relabel trust(resp.body, "ANTHROPIC-ERROR-DISPLAY");
-        let truncated: String = if err_body.len() > 512 { err_body.substring(0, 512) } else { err_body };
+        let truncated: String = if err_body.len() > 512 {
+            err_body.substring(0, 512)
+        } else { err_body };
         Err(AnthropicError::ApiError(code, truncated))
     }
 }
+// Validate: the Anthropic API accepts at most one system message.
